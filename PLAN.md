@@ -6,6 +6,16 @@ This document is the single source of truth for decisions made on 2026-07-10. Up
 
 ---
 
+## Resolved (2026-07-11)
+
+Both threads from the previous "open questions" pass are now decided:
+
+1. **Web development is fully off the table.** Native it is, via EAS Build (§5) — the PWA/web-deploy path is not happening. §5's EAS walkthrough is the real plan, not a fallback; treat it as authoritative, not "dead weight to prune."
+
+2. **Home screen restructure — confirmed direction, not yet built.** Main screen shows both cats together (idle/snuggling, the duo FSM state pulled forward from Phase 6), then **a smooth transition** — not a stark screen swap — carries both users into caring for the other's cat. Still **not yet implemented**; this is locked-in intent for a future session, tracked as its own line in §7's build order. When we build it: `src/app/index.tsx` becomes the snuggle home, today's content moves to `src/app/care.tsx`, the FSM gains a shared duo state (e.g. `snuggling`) guarded by "both cats idle," and the screen transition itself is a Reanimated shared-element/layout animation rather than React Navigation's default push — that's the mechanism for "smooth," not just a route change.
+
+---
+
 ## 1. Locked decisions
 
 | Topic | Decision |
@@ -149,7 +159,8 @@ Until art exists, `manifest.ts` maps states to `null` and the app renders emoji 
 |---|---|---|
 | 1. Scaffold + structure | Feature folders, theme, docs, teach.md | ✅ 2026-07-10 |
 | 2. Local cats | FSM + Zustand + both cats interactive offline | ✅ 2026-07-10 |
-| 2.5. Dev client build | `expo-dev-client` + EAS Build, both phones off Expo Go for good — see §5 | ⬜ |
+| 2.5. Dev client build | `expo-dev-client` + EAS Build, both phones off Expo Go for good — see §5 | 🟡 in progress: `expo-dev-client` installed, `eas-cli` confirmed via `npx eas-cli@latest`, currently blocked on `eas login` (requires the user's own Expo account credentials — can't be done on their behalf). Next step once logged in: `eas build:configure` then `eas build --profile development --platform android`. |
+| 2.6. Snuggle home + care transition | Duo FSM state, `index.tsx` → snuggle hub, `care.tsx` → today's two-CatCard screen, Reanimated transition between them — locked intent, see "Resolved" above | ⬜ |
 | 3. Juice | Reanimated hearts/bounce, GIF manifest wired to real art | ⬜ |
 | 4. Supabase | Auth, couple pairing via invite code, RLS | ⬜ |
 | 5. Realtime sync | Server-authoritative cat state, two phones one truth | ⬜ |
