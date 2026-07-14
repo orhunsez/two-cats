@@ -12,7 +12,7 @@
 import { create } from 'zustand';
 
 import { transition, type CatEvent, type CatState } from './fsm';
-import { STATE_DURATION_MS } from './registry';
+import { PARTNER_REACTIONS, STATE_DURATION_MS } from './registry';
 import type { CatId } from './types';
 
 interface CatRuntime {
@@ -23,9 +23,15 @@ interface CatRuntime {
 
 interface CatStore {
   cats: Record<CatId, CatRuntime>;
-  /** Try to apply an event to a cat. Returns whether the FSM accepted it. */
-  send: (catId: CatId, event: CatEvent) => boolean;
+  /**
+   * Try to apply an event to a cat. Returns whether the FSM accepted it.
+   * `isReaction` is internal: it marks a partner reaction so reactions can't
+   * chain (see PARTNER_REACTIONS). External callers pass just (catId, event).
+   */
+  send: (catId: CatId, event: CatEvent, isReaction?: boolean) => boolean;
 }
+
+const partnerOf = (catId: CatId): CatId => (catId === 'black' ? 'orange' : 'black');
 
 // Timer handles live outside the store: they are plumbing, not app state.
 const finishTimers: Partial<Record<CatId, ReturnType<typeof setTimeout>>> = {};
@@ -36,7 +42,7 @@ export const useCatStore = create<CatStore>()((set, get) => ({
     orange: { state: 'idle', stateStartedAt: Date.now() },
   },
 
-  send: (catId, event) => {
+  send: (catId, event, isReaction = false) => {
     const current = get().cats[catId].state;
     const next = transition(current, event);
     if (next === null) return false; // FSM rejected it (e.g. FEED while sleeping)
@@ -56,6 +62,16 @@ export const useCatStore = create<CatStore>()((set, get) => ({
       finishTimers[catId] = setTimeout(() => {
         get().send(catId, 'FINISH');
       }, duration);
+    }
+
+    // Cross-cat choreography: this cat's action may nudge its partner (e.g. one
+    // eats → the other grooms itself). Only real user actions trigger reactions,
+    // never reactions themselves, so the chain is at most one hop deep.
+    if (!isReaction) {
+      const reaction = PARTNER_REACTIONS[event];
+      if (reaction) {
+        get().send(partnerOf(catId), reaction, true);
+      }
     }
     return true;
   },

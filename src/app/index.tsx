@@ -1,18 +1,33 @@
 /**
- * Home screen: both cats, side by side in life and on screen.
- * The file path src/app/index.tsx IS the route "/" — that's Expo Router's
- * file-based routing.
+ * The only screen: both cats living together in one shared frame, plus the
+ * controls to care for each of them. You feed/groom/sleep HER cat, she does
+ * the same for yours — but whatever happens, it happens together on screen.
+ * (src/app/index.tsx IS the route "/" — Expo Router's file-based routing.)
  */
 
-import { ScrollView, StyleSheet, Text } from 'react-native';
+import { useRef } from 'react';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { spacing, useTheme } from '@/constants/theme';
-import { CatCard } from '@/features/cat/components/CatCard';
-import { CAT_IDS } from '@/features/cat/types';
+import { radius, spacing, useTheme } from '@/constants/theme';
+import { useCatStore } from '@/features/cat/catStore';
+import { ActionBar } from '@/features/cat/components/ActionBar';
+import { DuoScene, type DuoSceneHandle } from '@/features/cat/components/DuoScene';
+import type { CatEvent } from '@/features/cat/fsm';
+import { CAT_IDS, CAT_PROFILES } from '@/features/cat/types';
 
 export default function HomeScreen() {
   const theme = useTheme();
+  const send = useCatStore((s) => s.send);
+  const cats = useCatStore((s) => s.cats);
+  const sceneRef = useRef<DuoSceneHandle>(null);
+
+  const handleAction = (catId: (typeof CAT_IDS)[number], event: CatEvent) => {
+    const accepted = send(catId, event);
+    if (!accepted) {
+      sceneRef.current?.shake(); // the cat refuses (e.g. fed while asleep)
+    }
+  };
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.background }]}>
@@ -22,8 +37,18 @@ export default function HomeScreen() {
           one is yours, one is hers 🖤🧡
         </Text>
 
+        <DuoScene ref={sceneRef} />
+
         {CAT_IDS.map((catId) => (
-          <CatCard key={catId} catId={catId} />
+          <View key={catId} style={styles.controls}>
+            <Text style={[styles.catName, { color: theme.text }]}>
+              care for {CAT_PROFILES[catId].displayName}
+            </Text>
+            <ActionBar
+              state={cats[catId].state}
+              onAction={(event) => handleAction(catId, event)}
+            />
+          </View>
         ))}
       </ScrollView>
     </SafeAreaView>
@@ -51,5 +76,14 @@ const styles = StyleSheet.create({
     fontSize: 15,
     textAlign: 'center',
     marginBottom: spacing.sm,
+  },
+  controls: {
+    borderRadius: radius.lg,
+    gap: spacing.sm,
+    alignItems: 'center',
+  },
+  catName: {
+    fontSize: 16,
+    fontWeight: '700',
   },
 });

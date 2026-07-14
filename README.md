@@ -11,7 +11,7 @@ A tiny app for two lovers and their two virtual cats. You take care of **her** b
 | State | [Zustand](https://zustand.docs.pmnd.rs) | Lightweight, the most popular modern client-state library |
 | Backend | [Supabase](https://supabase.com) *(Phase 4+)* | Postgres + Auth + Realtime + Row Level Security |
 | Animations | [Reanimated](https://docs.swmansion.com/react-native-reanimated/) + [expo-image](https://docs.expo.dev/versions/latest/sdk/image/) | Reanimated for UI juice, expo-image for looping cat GIFs |
-| Cat brain | A hand-rolled finite-state machine | 4 states, 5 events, one table — see [PLAN.md](PLAN.md) |
+| Cat brain | A hand-rolled finite-state machine | 5 states, 6 events, one table — see [PLAN.md](PLAN.md) |
 
 ## Getting started
 
@@ -50,4 +50,4 @@ assets/cats/        # <cat>_<state>.gif — see art spec in PLAN.md
 
 ## Status
 
-Phase 2 of 9 done: both cats live on the home screen and respond to actions locally (emoji placeholders until the GIFs are generated). Next up: Phase 2.5, the EAS development-build switch (see PLAN.md §5), then animation juice, then Supabase.
+Phases 1–2.6 done: one screen shows both cats always together in a shared scene derived from their two states (snuggling, one grooming the other, both dreaming…), with each cat's care controls below. The first batch of pixel art is wired in; combos without art yet fall back to emoji (art pipeline + coverage table: PLAN.md §6). Runs on a real Android dev client built with EAS (PLAN.md §5). Next up: animation juice + the remaining scene art (Phase 3), then Supabase.

@@ -9,18 +9,30 @@
  * (e.g. "play") means adding one state, one event, and one row — no new logic.
  */
 
-export const CAT_STATES = ['idle', 'eating', 'grooming', 'sleeping'] as const;
+export const CAT_STATES = [
+  'idle',
+  'eating',
+  'grooming_self',
+  'grooming_other',
+  'sleeping',
+] as const;
 
 export type CatState = (typeof CAT_STATES)[number];
 
-export type CatEvent = 'FEED' | 'GROOM' | 'SLEEP' | 'WAKE' | 'FINISH';
+export type CatEvent = 'FEED' | 'GROOM_SELF' | 'GROOM_OTHER' | 'SLEEP' | 'WAKE' | 'FINISH';
 
 type TransitionTable = Record<CatState, Partial<Record<CatEvent, CatState>>>;
 
 const TRANSITIONS: TransitionTable = {
-  idle: { FEED: 'eating', GROOM: 'grooming', SLEEP: 'sleeping' },
+  idle: {
+    FEED: 'eating',
+    GROOM_SELF: 'grooming_self',
+    GROOM_OTHER: 'grooming_other',
+    SLEEP: 'sleeping',
+  },
   eating: { FINISH: 'idle' },
-  grooming: { FINISH: 'idle' },
+  grooming_self: { FINISH: 'idle' },
+  grooming_other: { FINISH: 'idle' },
   sleeping: { WAKE: 'idle' },
 };
 

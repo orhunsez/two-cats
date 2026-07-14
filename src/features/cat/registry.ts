@@ -21,9 +21,10 @@ export interface CatAction {
 }
 
 export const CAT_ACTIONS: CatAction[] = [
-  { event: 'FEED', label: 'Feed', emoji: '🍣' },
-  { event: 'GROOM', label: 'Groom', emoji: '🪮' },
-  { event: 'SLEEP', label: 'Sleep', emoji: '🌙', visibleIn: ['idle', 'eating', 'grooming'] },
+  { event: 'FEED', label: 'Feed', emoji: '🍣', visibleIn: ['idle'] },
+  { event: 'GROOM_SELF', label: 'Groom self', emoji: '🪮', visibleIn: ['idle'] },
+  { event: 'GROOM_OTHER', label: 'Groom partner', emoji: '💞', visibleIn: ['idle'] },
+  { event: 'SLEEP', label: 'Sleep', emoji: '🌙', visibleIn: ['idle'] },
   { event: 'WAKE', label: 'Wake up', emoji: '☀️', visibleIn: ['sleeping'] },
 ];
 
@@ -34,12 +35,28 @@ export const CAT_ACTIONS: CatAction[] = [
  */
 export const STATE_DURATION_MS: Partial<Record<CatState, number>> = {
   eating: 5000,
-  grooming: 5000,
+  grooming_self: 5000,
+  grooming_other: 5000,
 };
 
 export const STATE_LABEL: Record<CatState, string> = {
   idle: 'is lounging around',
   eating: 'is eating 🍽️',
-  grooming: 'is getting groomed ✨',
+  grooming_self: 'is grooming itself ✨',
+  grooming_other: 'is grooming its partner 💞',
   sleeping: 'is fast asleep 💤',
+};
+
+/**
+ * Cross-cat choreography, expressed as data (not if/else soup): when one cat
+ * successfully does the KEY event, its partner is nudged with the VALUE event.
+ * The partner's own FSM still gets the final say — if it isn't idle, the nudge
+ * is simply rejected (best-effort, never forced). Reactions never chain: a
+ * reaction event is not itself a key here, and the store guards against it too.
+ *
+ * Add a new bit of "when A does X, B does Y" behavior with one line here.
+ */
+export const PARTNER_REACTIONS: Partial<Record<CatEvent, CatEvent>> = {
+  FEED: 'GROOM_SELF', // one cat eats → the other grooms itself
+  GROOM_OTHER: 'SLEEP', // one cat grooms the other → the groomed one falls asleep
 };

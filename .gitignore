@@ -35,6 +35,9 @@ yarn-error.*
 .DS_Store
 *.pem
 
+# Windows "mark of the web" metadata copied in alongside downloaded files
+*:Zone.Identifier
+
 # local env files
 .env*.local
 

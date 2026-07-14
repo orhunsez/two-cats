@@ -275,3 +275,156 @@ npm run tunnel   # or: npx expo start
 The only difference: instead of opening **Expo Go** and scanning the QR, you open the **two-cats dev client** app icon that's now on your home screen and scan the same QR from inside it. Same Metro server, same tunnel, same hot reload — just an app icon that's ours instead of Expo's, and immune to the SDK-cap that started this whole detour.
 
 *Next session: once the Android build link is confirmed working on your phone, either Phase 2.6 (snuggle home) or Phase 3 (animation juice) — your call.*
+
+---
+
+## Session 4 — 2026-07-14 · Phase 2.6: the snuggle home, and the most important lesson in this file
+
+The app got its intended shape: `/` shows both cats coexisting in one shared scene, and a "care for the cats" button slides up `/care`, where the old two-card screen now lives. Small diff, but it contains the single most transferable idea so far.
+
+### 4.1 Derived state — the lesson worth the whole session
+
+The obvious way to build "the cats are snuggling" is to make `snuggling` a new FSM state, or a `currentScene` field in the store. We did **neither**, and the reason is a rule you'll use for the rest of your career:
+
+> **If a value can be computed from state you already have, compute it. Never store it.**
+
+Nobody *triggers* snuggling — it's just what "both cats idle" looks like. "Luna lingers around sleeping Mango" is just what `(idle, sleeping)` looks like. So the scene is a **pure function of the two states** ([src/features/cat/duo.ts](src/features/cat/duo.ts)):
+
+```ts
+getDuoScene(black: CatState, orange: CatState): DuoSceneId
+```
+
+Why storing it would be a bug factory: a stored `scene` is a *second source of truth*. Feed a cat and forget to update the scene → the store now says "snuggling" while a cat is eating. Every stored-but-derivable value grows an army of "remember to update it here too" call sites — that's function soup's cousin, *state soup*. A derived value **cannot desync, by construction**. And in Phase 5 this pays off double: Supabase only ever stores the two cat states, and both phones derive identical scenes for free.
+
+Contrast with Phase 6's CUDDLE, which *will* be an FSM state — because cuddling is user-triggered, timed, and interruptible: genuinely *new* information that can't be derived. That's the test: **can I compute it? → derive. Is it new information? → store.**
+
+### 4.2 The second screen cost ~zero navigation code
+
+[src/app/care.tsx](src/app/care.tsx) existing *is* the routing — Expo Router turns the file path into the `/care` route (Session 1.2). Navigation is a `<Link href="/care" asChild>` wrapping our own `<Pressable>` (`asChild` = "make my child the touchable instead of rendering your own"), and `router.back()` for the return trip. Android's hardware back button works automatically, because a Stack navigator maintains a real history.
+
+**Typed routes caught a "bug" before it existed:** `tsc` initially *rejected* `href="/care"` — Expo Router generates a type listing every route that exists, and the generated file hadn't been refreshed since before `care.tsx` was created (it regenerates when Metro boots). A typo like `href="/carre"` would be caught at compile time forever. This is why we ran `expo start` for a few seconds mid-session: to regenerate that file — not to test anything.
+
+### 4.3 "Smooth transition" = two layered animations
+
+- **The screen itself**: `animation: 'slide_from_bottom'` on the care screen ([_layout.tsx](src/app/_layout.tsx)) — one native-stack option instead of the default sideways push. (PLAN.md originally said "shared-element transition"; Reanimated 4 dropped that experimental v3 API, so this is the pragmatic version.)
+- **The content**: each `CatCard` enters with `FadeInDown.delay(index * 120).springify()` — a Reanimated **entering animation**, a declarative one-liner you attach to `Animated.View`. The 120ms stagger is a classic bit of motion design: things arriving *slightly* apart read as alive; things arriving simultaneously read as a page load.
+
+New Reanimated vocabulary in [DuoScene.tsx](src/features/cat/components/DuoScene.tsx): `withRepeat(withSequence(...), -1)` — the `-1` means "forever" — gives the emoji placeholder a gentle breathing bob. Same worklet machinery as Session 1.6's shake, new composition.
+
+### 4.4 The lint error that made the code better
+
+First draft picked a random art variant with `Math.random()` during render. The React Compiler's lint rejected it: **render must be pure** — same inputs, same output, every time. React reserves the right to re-render whenever it wants; impure renders reshuffle things at random moments.
+
+The fix wasn't to silence the rule but to find a *deterministic seed that changes exactly when we want a reshuffle*: `(black.stateStartedAt + orange.stateStartedAt) % variants.length`. Re-renders now can't reshuffle mid-scene — and in Phase 5, both phones will compute the **same** variant, because `stateStartedAt` will come from the server. A lint error, followed honestly, accidentally designed the multiplayer feature. Purity keeps paying like that.
+
+### 4.5 Variants as arrays — designing the manifest for art that doesn't exist
+
+You said "multiple different animations per phase," so `DUO_GIFS` maps each scene to an **array** (`number[] | null`) instead of a single file. The pick-one-variant logic is already written and tested against `null`; when art lands, it's purely a data change. Designing the data shape for the *known future* (arrays) while shipping the *present* (null + emoji) is the registry pattern doing its job — see PLAN.md §6.2 for the exact swap steps.
+
+*Next session: real art in the manifest (PLAN.md §6.1 for generation options), then Phase 3 juice — hearts on successful actions, button squishes.*
+
+---
+
+## Session 5 — 2026-07-15 · One screen, "always together", and a lesson in combinatorics
+
+Two things happened: the first batch of real art arrived (9 pixel-art images), and looking at them triggered a design change — every image shows *both cats together*, so the app collapsed from two screens to one. The care screen and the solo `CatCard`/`CatSprite` components were **deleted**. This session is as much about what we removed as what we added.
+
+### 5.1 Deleting code is a feature
+
+We built `care.tsx`, `CatCard`, and `CatSprite` last session and threw them away this session. That's not waste — it's the design working. The art told us the truth: these cats are a pair, never soloists. Keeping a solo-cat rendering path "just in case" would be dead weight that every future change has to keep working. **Code you can delete cleanly is a sign the boundaries were drawn well** — `CatSprite` came out in one piece because nothing else reached into it. Chasing "what if we need it later" is how a codebase rots; delete now, and git remembers it if we're ever wrong.
+
+### 5.2 The combinatorial explosion (and why the resolver already handled it)
+
+Here's the real computer-science lesson. Two cats, five states each = **5 × 5 = 25 possible pairings**. If we tried to store "the current scene" as its own piece of state, we'd have 25 cases to keep in sync every time either cat moved. Instead the scene is a *pure function of the two states* ([duo.ts](src/features/cat/duo.ts)):
+
+```ts
+getDuoScene(black: CatState, orange: CatState): DuoSceneId
+```
+
+We have art for ~8 of the 25 pairings. The resolver is an ordered list of `if` checks, most-specific first, ending in a catch-all `return 'apart'`. Pairings with art get their scene; the other ~17 fall through to an emoji. **This is the same "derive, don't store" rule from Session 4.1, now earning its keep at scale** — 25 combinations would be genuinely painful to hold as state, and completely free to compute.
+
+Ordering matters and teaches how `if`-chains encode priority: `grooming_other` is checked *first* because "Luna is licking Mango" is the whole picture regardless of what Mango is technically doing. General rule for resolver chains: **most-specific and most-dominant cases first, catch-all last.**
+
+### 5.3 Why we split GROOM into two events
+
+`GROOM` became `GROOM_SELF` and `GROOM_OTHER`. This is the registry pattern's promised expandability made real (Session 1.4 claimed "a new activity is one FSM row + one registry entry" — here's the receipt):
+
+- **fsm.ts**: `grooming` → `grooming_self`, plus a new `grooming_other` state and `GROOM_OTHER` event. The `Record<CatState, ...>` type immediately flagged every table that needed the new state — follow the red squiggles, done.
+- **registry.ts**: one new `CAT_ACTIONS` entry, one `STATE_DURATION_MS` entry, one `STATE_LABEL`. The button appeared on screen with zero UI code written.
+
+Design restraint worth noticing: `grooming_other` is a **pure per-cat state** — Luna grooming Mango only changes *Luna's* state; it doesn't reach across and modify Mango. A true two-way joint action (both cats' rows changing together, guarded by "both idle") is genuinely harder, and we deliberately deferred it to `CUDDLE` in Phase 6 where the mutual semantics are actually required. **Don't build the hard general version until a feature needs it** — `grooming_other` got us the "one cat grooms the other" art for the cost of a normal state.
+
+### 5.4 One `ref`, one shake, moved to the scene
+
+With no solo sprite, the refusal shake had nowhere to live — so it moved onto `DuoScene` itself. Same `useImperativeHandle` pattern as before (Session 1.8), but now interesting because the scene *already* had an animation running: a slow breathing `bob` on `translateY`. The shake is `translateX`. They compose in one `useAnimatedStyle`:
+
+```ts
+transform: [{ translateX: shakeX.value }, { translateY: bob.value }]
+```
+
+Two independent shared values, two independent animations, one transform — they don't fight because they drive different axes. That's the Reanimated mental model: **animate values, not components; a component's style is just a function of however many values you point at it.**
+
+### 5.5 Images aren't GIFs, and that's fine
+
+Your art came as `.jpg` stills, not animated GIFs. `expo-image` renders JPG/PNG/WebP/GIF through the *same* component — a still just doesn't move. So the app shows real art *now*, and "animate it later" is literally swapping a file at the same path in the manifest, no code change. Shipping the still and upgrading to motion later is a good instinct: **get the real thing on screen at 80%, then polish** beats waiting for perfect animated assets before you can see your app.
+
+*Next session: Phase 3 juice — floating hearts when an action lands, a press-squish on the buttons — and generating the missing `lingering`/`apart` scene art.*
+
+---
+
+## Session 6 — 2026-07-15 · Choreography: when one cat's action moves the other
+
+You added two rules — *"if a cat eats, the other grooms itself"* and *"if a cat grooms the other, the groomed one falls asleep"* — and re-drew the art so every image is a precise `(black, orange)` state pair. Two design ideas did the heavy lifting: **a reaction layer that keeps the FSM pure**, and **a lookup table that replaced a chain of `if`s**.
+
+### 6.1 Where cross-cat rules are allowed to live
+
+The FSM ([fsm.ts](src/features/cat/fsm.ts)) is *per-cat*: `transition(state, event)` knows one cat and nothing else. That purity is precious (testable, server-reusable), so a rule like "feeding Luna makes Mango groom himself" — which by definition touches *two* cats — **cannot** live there without poisoning it.
+
+The right home is one layer up: the **store**, which owns *both* cats. So `catStore.send` gained a small choreography step — after a cat's action succeeds, it nudges the partner. The layering rule to internalize: **keep the core model unaware of its neighbors; put cross-entity rules in the coordinator that already holds all the entities.** Same reason the FSM doesn't call Supabase — each layer only knows what it must.
+
+### 6.2 Reactions as data (again), and two subtle guards
+
+True to the registry pattern, the rules are *data*, not code ([registry.ts](src/features/cat/registry.ts)):
+
+```ts
+export const PARTNER_REACTIONS: Partial<Record<CatEvent, CatEvent>> = {
+  FEED: 'GROOM_SELF',    // one eats → the other grooms itself
+  GROOM_OTHER: 'SLEEP',  // one grooms the other → the groomed one falls asleep
+};
+```
+
+Adding "when A does X, B does Y" is one line. But two guards make it safe, and both are worth understanding:
+
+1. **Best-effort, not forced.** The reaction goes through the partner's own `send`, so the partner's FSM can still *reject* it (you can't `GROOM_SELF` a cat that's mid-meal). We let the rule quietly no-op rather than forcing an illegal state. Honest rules that degrade beat rules that lie.
+2. **One hop, no chains.** `send(catId, event, isReaction)` carries a flag; a reaction-triggered `send` passes `isReaction = true` and *skips* firing further reactions. Today neither reaction target (`GROOM_SELF`, `SLEEP`) is itself a trigger, so nothing would loop — but relying on "the data happens not to cycle" is how you get an infinite loop six months later. The flag makes the guarantee **structural** instead of accidental. General instinct: when something can recurse, cap the recursion at the mechanism, not by trusting the inputs.
+
+### 6.3 The art *is* the spec — reactions exist to reach it
+
+Here's the elegant part of your design. You drew the art as exact pairs, e.g. `black_eats_orange_grooms_itself` = (eating, grooming_self). The reactions are precisely what *drive the cats into those pairs*: pressing **Feed Luna** puts Luna in `eating` and — via the reaction — Mango in `grooming_self`, which is exactly the pair that image depicts. Same for grooming: **Luna grooms Mango** → Luna `grooming_other`, Mango `sleeping` → the `black_grooms_orange` frame (where Mango is asleep, just as you drew him). The behavior and the art were designed to meet in the middle. That's real game design: **mechanics and art agreeing on the same state.**
+
+### 6.4 From an `if`-chain to a lookup table
+
+Last session's resolver was an ordered stack of `if`s. Now that each scene is an exact pair, it became a **table** ([duo.ts](src/features/cat/duo.ts)):
+
+```ts
+const SCENE_BY_PAIR: Record<string, DuoSceneId> = {
+  'idle|idle': 'snuggling',
+  'eating|grooming_self': 'black_eats',
+  // ...
+};
+getDuoScene = (b, o) => SCENE_BY_PAIR[`${b}|${o}`] ?? 'apart';
+```
+
+Two things to take away. First, **when branches are just "input → output" with no ordering logic, a table beats `if`s** — it's data you can read at a glance, and the `?? 'apart'` makes the fallback explicit. Second, the key is `` `${b}|${o}` `` with a `|` separator *because state names contain underscores* — `grooming_self` + `sleeping` naively glued as `grooming_self_sleeping` is ambiguous; `grooming_self|sleeping` can't be misread. Choosing a separator that can't appear in your data is a tiny habit that prevents a real class of bug.
+
+(One deliberate exception survives as two `if`s below the table: `grooming_other` "wins" regardless of the partner, because one cat grooming the other dominates the frame. Tables for the exact cases, a rule for the genuinely-general one.)
+
+### 6.5 What this bought, and the gap it exposed
+
+Every one of your 10 images is now wired to the exact pair it depicts, including the two `lingering` frames that were emoji last session. But making the mapping *exact* also made one gap precise: **grooming a cat while its partner is awake** — `(grooming_self, idle)` — has no art, because every grooming-self image you drew shows the partner *asleep*. It falls back to emoji. That's not a bug; it's the honest consequence of exact mapping, and it's exactly the kind of thing worth surfacing rather than hiding behind a close-enough image. The fix is a product decision (draw it / reuse the asleep art / add a rule), noted in PLAN.md §6.
+
+### 6.6 Housekeeping: Windows `Zone.Identifier` files
+
+The art arrived from Windows carrying `*:Zone.Identifier` sidecar files — NTFS "mark of the web" metadata that tags downloaded files. Harmless but junk in a repo, and one had leaked in with no matching image. Removed them and added `*:Zone.Identifier` to `.gitignore`. Small thing, but keeping non-source cruft out of version control is part of the same hygiene as never committing `node_modules`.
+
+*Next session: Phase 3 juice — hearts when an action lands, button squish — and closing the `(grooming_self, idle)` art gap.*

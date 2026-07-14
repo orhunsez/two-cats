@@ -1,47 +1,34 @@
 /**
- * The art manifest: maps every (cat, state) pair to its looping GIF.
+ * The art manifest: maps every duo scene to its image(s). The cats are always
+ * shown together, so there is only ONE art table — the shared scene (see
+ * duo.ts), never per-cat solo sprites.
  *
- * Workflow for adding art:
- *   1. Drop the file into assets/cats/ named `<cat>_<state>.gif`
- *      (e.g. black_eating.gif) — 512×512, first frame ≈ last frame.
- *   2. Replace the `null` below with `require('@/assets/cats/black_eating.gif')`.
+ * Each scene holds an ARRAY of variants — DuoScene picks one deterministically
+ * (seeded by when the scene began) so a scene with several images doesn't
+ * always play the same one, while staying stable across re-renders. Add art as
+ * `assets/cats/<name>.jpg` (or .png/.gif — expo-image renders them all the
+ * same way) and list it here.
  *
- * `null` means "art not made yet" and CatSprite renders the emoji fallback,
- * so the app is fully playable before any art exists.
+ * `null` = no art for that combo yet → DuoScene renders the scene's emoji from
+ * DUO_SCENE_INFO, so the app is fully playable before every combo has art.
  */
 
-import type { CatState } from './fsm';
-import type { CatId } from './types';
+import type { DuoSceneId } from './duo';
 
 // require() returns a number (an asset ID) in React Native.
-type GifSource = number | null;
-
-export const CAT_GIFS: Record<CatId, Record<CatState, GifSource>> = {
-  black: {
-    idle: null,
-    eating: null,
-    grooming: null,
-    sleeping: null,
-  },
-  orange: {
-    idle: null,
-    eating: null,
-    grooming: null,
-    sleeping: null,
-  },
-};
-
-export const FALLBACK_EMOJI: Record<CatId, Record<CatState, string>> = {
-  black: {
-    idle: '🐈‍⬛',
-    eating: '🐈‍⬛ 🍣',
-    grooming: '🐈‍⬛ 🫧',
-    sleeping: '🐈‍⬛ 💤',
-  },
-  orange: {
-    idle: '🐈',
-    eating: '🐈 🍣',
-    grooming: '🐈 🫧',
-    sleeping: '🐈 💤',
-  },
+export const DUO_GIFS: Record<DuoSceneId, number[] | null> = {
+  snuggling: [require('../../../assets/cats/cats_awake_idle.jpg')],
+  dreaming: [require('../../../assets/cats/cats_sleeping.jpg')],
+  eating_together: [require('../../../assets/cats/cats_eating.jpg')],
+  lingering_black: [require('../../../assets/cats/black_idle_orange_sleeps.jpg')],
+  lingering_orange: [require('../../../assets/cats/orange_idle_black_sleeps.jpg')],
+  black_grooms_self: [require('../../../assets/cats/black_grooms_itself_orange_sleeps.jpg')],
+  orange_grooms_self: [require('../../../assets/cats/orange_grooms_itself_black_sleeps.jpg')],
+  black_grooms_other: [require('../../../assets/cats/black_grooms_orange.jpg')],
+  orange_grooms_other: [require('../../../assets/cats/orange_grooms_black.jpg')],
+  black_eats_orange_grooms: [require('../../../assets/cats/black_eats_orange_grooms_itself.jpg')],
+  orange_eats_black_grooms: [require('../../../assets/cats/orange_eats_black_grooms_itself.jpg')],
+  black_eats_orange_sleeps: [require('../../../assets/cats/black_eats_orange_sleeps.jpg')],
+  orange_eats_black_sleeps: [require('../../../assets/cats/orange_eats_black_sleeps.jpg')],
+  apart: null, // catch-all for pairings without dedicated art (→ emoji)
 };

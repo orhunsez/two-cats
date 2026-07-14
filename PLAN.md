@@ -12,7 +12,10 @@ Both threads from the previous "open questions" pass are now decided:
 
 1. **Web development is fully off the table.** Native it is, via EAS Build (§5) — the PWA/web-deploy path is not happening. §5's EAS walkthrough is the real plan, not a fallback; treat it as authoritative, not "dead weight to prune."
 
-2. **Home screen restructure — confirmed direction, not yet built.** Main screen shows both cats together (idle/snuggling, the duo FSM state pulled forward from Phase 6), then **a smooth transition** — not a stark screen swap — carries both users into caring for the other's cat. Still **not yet implemented**; this is locked-in intent for a future session, tracked as its own line in §7's build order. When we build it: `src/app/index.tsx` becomes the snuggle home, today's content moves to `src/app/care.tsx`, the FSM gains a shared duo state (e.g. `snuggling`) guarded by "both cats idle," and the screen transition itself is a Reanimated shared-element/layout animation rather than React Navigation's default push — that's the mechanism for "smooth," not just a route change.
+2. **Single-screen "always together" model — ✅ 2026-07-14, revised 2026-07-15.** There is now exactly **one screen** (`src/app/index.tsx`). The cats are never rendered alone: the shared duo frame is the only stage, and each cat's action controls sit below it. The brief second-screen experiment (`care.tsx` + solo `CatCard`/`CatSprite`) was deleted — "when a cat does something, it doesn't do it alone; they do it together on screen."
+   - **Duo scenes are *derived*, not FSM states.** The shared frame is computed by a pure resolver — `getDuoScene(blackState, orangeState)` in `src/features/cat/duo.ts` — from the two cats' *existing* FSM states. Nobody triggers "snuggling" or "Luna grooms Mango as a scene"; it's just what a given (blackState, orangeState) pairing looks like. Storing it would create a second source of truth that could drift. The user-triggered CUDDLE duo *action* (Phase 6) still goes through the FSM as planned.
+   - **Combinatorial art, honest fallback.** Two cats × 5 states = 25 possible pairings; we have art for ~8. The resolver maps the combos we have art for and falls back to `apart`/emoji for the rest — see §6. Adding art for a new pairing is one scene + one resolver line, zero component changes.
+   - **The refusal shake moved to the shared scene.** With no solo sprite left, a rejected action shakes the whole `DuoScene` (`ref.shake()`), layered over its idle breathing bob.
 
 ---
 
@@ -34,24 +37,54 @@ Both threads from the previous "open questions" pass are now decided:
 ## 2. The cat FSM
 
 ```
-States:  idle | eating | grooming | sleeping        (later: cuddling)
-Events:  FEED | GROOM | SLEEP | WAKE | FINISH       (later: CUDDLE)
+States:  idle | eating | grooming_self | grooming_other | sleeping   (later: cuddling)
+Events:  FEED | GROOM_SELF | GROOM_OTHER | SLEEP | WAKE | FINISH      (later: CUDDLE)
 
-idle     --FEED-->   eating
-idle     --GROOM-->  grooming
-idle     --SLEEP-->  sleeping
-eating   --FINISH--> idle        (auto after N ms)
-grooming --FINISH--> idle        (auto after N ms)
-sleeping --WAKE-->   idle        (user action only)
+idle           --FEED-->         eating
+idle           --GROOM_SELF-->   grooming_self
+idle           --GROOM_OTHER-->  grooming_other
+idle           --SLEEP-->        sleeping
+eating         --FINISH-->       idle        (auto after N ms)
+grooming_self  --FINISH-->       idle        (auto after N ms)
+grooming_other --FINISH-->       idle        (auto after N ms)
+sleeping       --WAKE-->         idle        (user action only)
 ```
+
+`grooming_other` = this cat grooms its partner (Luna licking Mango). It's kept a
+**pure per-cat state** with no cross-cat guard for now — the actor just needs to
+be idle. The true joint action (both rows update atomically, guarded by "both
+idle") is reserved for `CUDDLE` in Phase 6, where the mutual semantics are
+essential. Splitting grooming into self/other is what makes the "one cat grooms
+the other" art (`black_grooms_orange`, `orange_grooms_black`) reachable.
+
+### Cross-cat choreography (partner reactions)
+
+The FSM stays pure (one cat, no knowledge of the other), but the **store** adds a
+thin choreography layer on top, driven by data in `registry.ts`:
+
+```
+PARTNER_REACTIONS = {
+  FEED:        GROOM_SELF   // one cat eats → the other grooms itself
+  GROOM_OTHER: SLEEP        // one grooms the other → the groomed one falls asleep
+}
+```
+
+When a *user* action succeeds, `catStore.send` nudges the partner with the mapped
+event. Reactions are **best-effort** (the partner's own FSM can still reject the
+nudge if it isn't idle) and **one hop deep** (a reaction never triggers another —
+`send` carries an `isReaction` flag). This is what makes the paired art land
+naturally: feeding Luna *produces* the (eating, grooming_self) frame; having Luna
+groom Mango *produces* the (grooming_other, sleeping) frame. The art was drawn as
+exact state-pairs, and the reactions are what move the cats into those pairs.
 
 Rules:
 
-- Invalid events (FEED while sleeping) are **rejected**, not queued. The UI responds with a refusal shake. No error states, no crashes — rejection is a feature.
+- Invalid events (FEED while sleeping) are **rejected**, not queued. The UI responds with a refusal shake on the shared scene. No error states, no crashes — rejection is a feature.
 - Timed states end via a `FINISH` event that goes through the same table, so a stale timer can never corrupt state.
 - The FSM is a pure function (`src/features/cat/fsm.ts`) with zero imports from React/Zustand — unit-testable, and reusable server-side later.
 - **Multiplayer twist (Phase 5):** the current state + `state_started_at` timestamp live in Supabase, not the phone. Both clients just render what the DB says. A phone opening mid-animation computes remaining time from `state_started_at`. This is server-authoritative state, like real multiplayer games.
 - **Duo actions (Phase 6):** `CUDDLE` is a joint transition guarded by "both cats idle"; both rows update atomically and one shared GIF plays.
+- **Duo *scenes* are not FSM states.** The one screen's shared frame is derived from the two states by a pure resolver in `duo.ts` — see "Resolved" item 2 above for why.
 
 ## 3. Architecture rules (the anti-function-soup constitution)
 
@@ -65,13 +98,13 @@ src/
   lib/              # (Phase 4) supabase client, generated DB types
   components/ui/    # dumb reusable pieces
   constants/        # theme
-assets/cats/        # <cat>_<state>.gif
+assets/cats/        # shared duo scene images (both cats in frame)
 ```
 
 1. **UI never talks to Supabase directly.** Components call store actions; the store talks to services.
 2. **The FSM stays pure.** No React, no I/O in `fsm.ts`.
-3. **Activities are data, not code.** The registry (`registry.ts`) defines label/emoji/duration/visibility; the manifest (`manifest.ts`) defines art. New activity = new entries + one FSM row.
-4. **Dumb components stay dumb.** `CatSprite` and `ActionBar` receive props and callbacks; only `CatCard` touches the store.
+3. **Activities are data, not code.** The registry (`registry.ts`) defines label/emoji/duration/visibility; the manifest (`manifest.ts`) defines art; the resolver (`duo.ts`) maps state pairs to scenes. New activity = new registry entry + one FSM row + (optionally) one scene.
+4. **Dumb components stay dumb.** `ActionBar` receives props and callbacks; only the screen (`index.tsx`) touches the store to `send()`, and `DuoScene` only ever *reads* it.
 
 ## 4. Database sketch (Phase 4–5)
 
@@ -141,17 +174,71 @@ Useful for **fast solo iteration** (instant reload, no device needed) while writ
 
 ## 6. GIF / art pipeline
 
-Needed files (9): `black_idle`, `black_eating`, `black_grooming`, `black_sleeping`, `orange_idle`, `orange_eating`, `orange_grooming`, `orange_sleeping`, `duo_cuddling`.
+**All art is duo art** — both cats in one frame — because the app only ever shows the shared scene (§Resolved 2). Every image depicts **one exact `(black, orange)` state pair**, so the resolver (`getDuoScene`) is a plain lookup table keyed by `${black}|${orange}`; a state pair with no row → `apart` → emoji.
 
-Spec for the AI generator:
+Scene → art (pixel-art batch, 13 images, 2026-07-15):
 
-- **512×512** canvas, cat centered and anchored identically in every file
-- **First frame ≈ last frame** → seamless loop (expo-image loops GIFs forever by default)
-- Same style prompt token across all generations; consistency > beauty
-- Plain or transparent background; keep files under ~1–2 MB
-- If files get heavy: convert to animated WebP (`gifski`/`cwebp`) — same manifest, smaller files
+| Scene | State pair (black, orange) | File |
+|---|---|---|
+| `snuggling` | (idle, idle) | `cats_awake_idle.jpg` |
+| `dreaming` | (sleeping, sleeping) | `cats_sleeping.jpg` |
+| `eating_together` | (eating, eating) | `cats_eating.jpg` |
+| `lingering_black` | (idle, sleeping) | `black_idle_orange_sleeps.jpg` |
+| `lingering_orange` | (sleeping, idle) | `orange_idle_black_sleeps.jpg` |
+| `black_grooms_self` | (grooming_self, sleeping) | `black_grooms_itself_orange_sleeps.jpg` |
+| `orange_grooms_self` | (sleeping, grooming_self) | `orange_grooms_itself_black_sleeps.jpg` |
+| `black_grooms_other` | (grooming_other, sleeping) | `black_grooms_orange.jpg` |
+| `orange_grooms_other` | (sleeping, grooming_other) | `orange_grooms_black.jpg` |
+| `black_eats_orange_grooms` | (eating, grooming_self) | `black_eats_orange_grooms_itself.jpg` |
+| `orange_eats_black_grooms` | (grooming_self, eating) | `orange_eats_black_grooms_itself.jpg` |
+| `black_eats_orange_sleeps` | (eating, sleeping) | `black_eats_orange_sleeps.jpg` |
+| `orange_eats_black_sleeps` | (sleeping, eating) | `orange_eats_black_sleeps.jpg` |
+| `apart` | every other pairing | — (emoji) |
 
-Until art exists, `manifest.ts` maps states to `null` and the app renders emoji fallbacks — fully playable with zero assets.
+Note the art deliberately pairs some solo activities with a *sleeping* partner (grooming self, eating-while-partner-sleeps). The partner reactions (§2) are tuned to land the cats in exactly these pairs.
+
+**Known art gaps (reachable pairings that fall to `apart`/emoji):**
+- **`(grooming_self, idle)` / `(idle, grooming_self)`** — pressing *Groom self* on one cat while the partner is awake/idle. The only grooming-self art shows the partner asleep, so this common case has no exact match. Options: draw a "grooms itself, partner awake" image, OR broaden the lookup to reuse the partner-asleep art, OR add a reaction so grooming yourself also settles the partner. **Open decision.**
+- **`(eating, idle)` / `(idle, eating)`** — brief transitional pairing (e.g. feed one cat while the other's reaction gets rejected, or wake the partner mid-meal). Low priority.
+- Reachability note: `eating_together` requires waking a sleeping cat and feeding it while the first is still mid-meal (5s window) — the FEED reaction (partner grooms itself) makes the both-eating pair rare by design. If it should be more common, tune the reaction later.
+
+Spec for the generator (matches this batch):
+
+- Both cats in frame, consistent windowsill/lighting; feed an existing image back in as the style reference so new art matches.
+- Square-ish canvas (batch is 1024×1024 / 1024×559); keep files ~200 KB or under.
+- Static images are fine — expo-image renders JPG/PNG/WebP/GIF identically; animate later by swapping the same filename for a GIF/WebP.
+- If files get heavy: convert to WebP (`gifski`/`cwebp`) — same manifest, smaller files.
+
+Until a pairing has art, `getDuoScene` returns `apart` (or the scene's `DUO_GIFS` entry is `null`) and `DuoScene` renders the emoji — fully playable with zero assets.
+
+### 6.1 Where to generate the art (2026-07-14)
+
+The universal strategy regardless of tool: **make one reference sheet per cat first** (a single still image that IS Luna / IS Mango), then feed that reference into every animation generation. Consistency comes from the reference, not from prompt luck.
+
+Three routes, in recommended order:
+
+1. **Pixel-art sprite tools (recommended first attempt).** Purpose-built for game sprites: pixel style makes cross-file consistency dramatically easier, loops are natural, files are tiny, transparency is clean. Look at **Retro Diffusion** (retrodiffusion.ai) and **Pixellab** (pixellab.ai) — both generate *animated* sprites from a reference image, which is exactly our job. Verify current pricing/features; this space moves fast.
+2. **Image model → sprite sheet → GIF.** ChatGPT's image generation and Midjourney (with its character/omni reference feature) both accept reference images. Ask for "a 4-frame animation sprite sheet of this exact cat eating, frames side by side, same pose anchor" → slice the frames → assemble with ezgif.com or `gifski`. Most manual control, most labor.
+3. **Image → video model → GIF.** Feed the reference still to an image-to-video model (Luma Dream Machine, Runway, Pika, Kling) with a prompt like "cat grooming itself, subtle motion, seamless loop" → download the clip → convert/trim to a looping GIF with ezgif or `ffmpeg`+`gifski`. Prettiest results, but seamless loops are the hard part and consistency across 8+ files is a fight.
+
+Conversion/cleanup toolbox: **ezgif.com** (web swiss-army knife: trim, crop, optimize, GIF↔WebP), **gifski** (highest-quality GIF encoder), **ffmpeg** (everything else). If GIFs come out heavy, animated WebP (same manifest, same expo-image playback) roughly halves the size.
+
+### 6.2 Wiring real art in (the manifest swap)
+
+Zero component changes — this is the registry pattern's payoff:
+
+1. Drop files in `assets/cats/`.
+2. In `src/features/cat/manifest.ts`, replace a scene's `null` with an array of `require`s (the app picks one variant per scene, seeded by when the scene began):
+   ```ts
+   // DUO_GIFS — one entry per scene, array of variants:
+   snuggling: [require('../../../assets/cats/cats_awake_playing.jpg')],
+   dreaming: [
+     require('../../../assets/cats/cats_sleeping.jpg'),
+     require('../../../assets/cats/cats_sleeping_1_1.jpg'),
+   ],
+   ```
+   Paths must be static strings (Metro resolves `require` at build time — no variables).
+3. That's it. Assets are a JS-side change: the dev client **hot-reloads them over Metro, no EAS rebuild needed**. They only get baked into a binary when a standalone (`preview`/`production`) build is made.
 
 ## 7. Build order
 
@@ -159,9 +246,9 @@ Until art exists, `manifest.ts` maps states to `null` and the app renders emoji 
 |---|---|---|
 | 1. Scaffold + structure | Feature folders, theme, docs, teach.md | ✅ 2026-07-10 |
 | 2. Local cats | FSM + Zustand + both cats interactive offline | ✅ 2026-07-10 |
-| 2.5. Dev client build | `expo-dev-client` + EAS Build, both phones off Expo Go for good — see §5 | 🟡 in progress: `expo-dev-client` installed, `eas-cli` confirmed via `npx eas-cli@latest`, currently blocked on `eas login` (requires the user's own Expo account credentials — can't be done on their behalf). Next step once logged in: `eas build:configure` then `eas build --profile development --platform android`. |
-| 2.6. Snuggle home + care transition | Duo FSM state, `index.tsx` → snuggle hub, `care.tsx` → today's two-CatCard screen, Reanimated transition between them — locked intent, see "Resolved" above | ⬜ |
-| 3. Juice | Reanimated hearts/bounce, GIF manifest wired to real art | ⬜ |
+| 2.5. Dev client build | `expo-dev-client` + EAS Build, both phones off Expo Go for good — see §5 | ✅ 2026-07-14 — Android dev client built on EAS and installed; `eas.json` + `android.package` committed. iOS build still pending Apple Developer enrollment. |
+| 2.6. Single-screen "always together" | One screen: derived duo scenes (`duo.ts`) + both cats' action bars. FSM split into `grooming_self`/`grooming_other`. Second screen + solo components deleted. First pixel-art batch wired in. — see "Resolved" above | ✅ 2026-07-15 |
+| 3. Juice | Reanimated hearts/bounce on successful actions; remaining scene art (lingering, apart); optional animated (GIF/WebP) art | ⬜ |
 | 4. Supabase | Auth, couple pairing via invite code, RLS | ⬜ |
 | 5. Realtime sync | Server-authoritative cat state, two phones one truth | ⬜ |
 | 6. Duo actions | Cuddle with both-idle guard | ⬜ |

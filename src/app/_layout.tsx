@@ -1,6 +1,7 @@
 /**
  * Root layout — Expo Router renders this around every screen.
- * For now a single Stack; auth screens and a timeline tab slot in here later.
+ * For now a single Stack with just the home screen; auth screens and a
+ * timeline tab slot in here later.
  */
 
 import { Stack } from 'expo-router';
