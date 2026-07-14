@@ -3,6 +3,11 @@
 # dependencies
 node_modules/
 
+# local pc app files
+.claude/
+.vscode/
+.cursor/
+
 # Expo
 .expo/
 dist/

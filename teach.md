@@ -217,3 +217,61 @@ One asymmetry to know about: Android `.apk` files, once installed, **never expir
 ### 2.6 Why `expo start --web` isn't a real test, even though it's tempting
 
 Web feels like it should be a shortcut — no phone, no build, instant reload. It's genuinely useful for iterating on layout and logic quickly. But it's running through `react-native-web`, which *maps* native components onto DOM/CSS rather than rendering them natively, and Reanimated falls back to a JS-driven web shim instead of running on the actual UI thread — the exact mechanism from Session 1.6 that makes animations smooth on a real device doesn't apply on web. A shake or a GIF loop can *look* fine in a browser tab and still behave differently on the device it's actually meant for. Treat web as a fast draft tool, not a verification step — your instinct that it shouldn't replace real testing was correct.
+
+---
+
+## Session 3 — 2026-07-14 · Actually leaving Expo Go: EAS setup and the first cloud build
+
+Session 2 was the *decision* to switch to development builds. This session is the *execution* — installing the pieces, authenticating, and producing an installable Android build.
+
+### 3.1 `expo-dev-client` — the package that makes a dev build possible
+
+Installed via `npx expo install expo-dev-client`. This single package is what turns "a normal compiled app" into "a normal compiled app that also knows how to find and load your Metro server," the same job Expo Go did, minus the version cap. `npx expo install` (vs. plain `npm install`) matters here: it looks up the version of the package that's actually compatible with our SDK 57, the same way `expo install` always resolves native-module versions correctly instead of just grabbing `latest`.
+
+### 3.2 `eas-cli` and `eas login` — an Expo account, not a device account
+
+`eas-cli` is a separate command-line tool from the `expo` CLI we'd used so far — it talks to Expo's cloud build servers (EAS), not your local Metro server. We ran it via `npx eas-cli@latest` rather than a global install, which is generally the safer default: no stale global version silently drifting out of sync with what a project needs.
+
+`eas login` authenticates the **CLI on your laptop** with your Expo account — not a per-phone thing, not related to the Google/Apple account on your device. One login on your machine is enough to build for both Android and iOS, and later, to invite your girlfriend as a collaborator on the same EAS project if we want her building too.
+
+Checking who's logged in:
+
+```bash
+npx eas-cli@latest whoami
+# orhunsez / orhunsez@gmail.com
+```
+
+### 3.3 `eas build:configure` — linking the local project to a cloud project
+
+Running `eas build:configure -p android` did two things, visible as file diffs:
+
+- **Created `eas.json`** — build *profiles* (`development`, `preview`, `production`), each a named bundle of build settings. Ours came pre-filled with sane defaults: `development` sets `developmentClient: true` (bakes in the dev-client behavior from §3.1) and `distribution: internal` (no store, ever — see PLAN.md §5). This is the same idea as `package.json` scripts: instead of typing build flags every time, you name a profile and reuse it (`eas build --profile development`).
+- **Added `extra.eas.projectId` to `app.json`** — a UUID that's the *only* link between this folder on your laptop and a project record on Expo's servers. That's why `expo.dev` immediately showed the project in your browser: the CLI created the cloud-side project and stamped its ID into our local config in the same step. Delete that field and this folder becomes disconnected from EAS entirely — it's the whole relationship in one string.
+
+### 3.4 The `android.package` error — interactive vs. non-interactive tooling
+
+I ran the actual build with `--non-interactive` (so it wouldn't hang waiting for terminal input I couldn't provide from here), and it failed immediately:
+
+```
+The "android.package" is required to be set in app config when running in non-interactive mode.
+```
+
+This is a good example of a general pattern in CLI tools: **interactive mode and non-interactive mode aren't the same tool with a flag toggled — they have different validation rules.** Run `eas build` normally in your own terminal and it would have *asked* you "what package name?" and written the answer for you. Run it with `--non-interactive` and it refuses to guess — it fails loudly instead of picking a default you didn't approve.
+
+The fix was adding `"package": "com.orhunsez.twocats"` under `android` in `app.json`. This is Android's **application ID** — a reverse-DNS string (read right-to-left: "twocats app, made by orhunsez") that uniquely identifies the app *on the device itself*, separate from its human-readable name. Two apps can both be called "two-cats"; only one can hold a given package ID on a phone at a time. iOS has the equivalent concept (`bundleIdentifier`) — we'll set that when the iOS build comes up.
+
+### 3.5 What the cloud build actually does
+
+`eas build --profile development --platform android` uploads the project to Expo's build servers, where a real Android build environment (the same tools Android Studio uses locally — Gradle, the Android SDK) compiles our JS/TS + native dependencies into an installable `.apk`. This is the direct payoff of Session 2.4's Mac/Linux constraint discussion: we never touch Gradle or an SDK manager ourselves, because none of that exists on this machine — it exists in Expo's infrastructure instead. Build progress and the final download link/QR show up both in the terminal and at `expo.dev`.
+
+### 3.6 What changes day-to-day after this
+
+Once the `.apk` is installed on your phone, the workflow from Session 1.5 is otherwise unchanged:
+
+```bash
+npm run tunnel   # or: npx expo start
+```
+
+The only difference: instead of opening **Expo Go** and scanning the QR, you open the **two-cats dev client** app icon that's now on your home screen and scan the same QR from inside it. Same Metro server, same tunnel, same hot reload — just an app icon that's ours instead of Expo's, and immune to the SDK-cap that started this whole detour.
+
+*Next session: once the Android build link is confirmed working on your phone, either Phase 2.6 (snuggle home) or Phase 3 (animation juice) — your call.*
