@@ -38,7 +38,8 @@ yarn-error.*
 # Windows "mark of the web" metadata copied in alongside downloaded files
 *:Zone.Identifier
 
-# local env files
+# local env files (supabase url + anon key live here — see .env.example)
+.env
 .env*.local
 
 # typescript

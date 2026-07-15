@@ -17,6 +17,10 @@ Both threads from the previous "open questions" pass are now decided:
    - **Combinatorial art, honest fallback.** Two cats × 5 states = 25 possible pairings; we have art for ~8. The resolver maps the combos we have art for and falls back to `apart`/emoji for the rest — see §6. Adding art for a new pairing is one scene + one resolver line, zero component changes.
    - **The refusal shake moved to the shared scene.** With no solo sprite left, a rejected action shakes the whole `DuoScene` (`ref.shake()`), layered over its idle breathing bob.
 
+3. **Identity gate + first server sync — 2026-07-16.** Two decisions:
+   - **"Who are you?" chooser instead of auth (for now).** On every launch the app asks whose human you are (Luna's or Mango's); per the cross-care model you then get controls for the *other* cat only — one action bar, not two. Identity is in-memory (`features/couple/identityStore.ts`), resets on restart, has a "switch" affordance for testing both roles on one phone. Phase 4 auth replaces the chooser with a real session.
+   - **Supabase sync WITHOUT couple pairing (Phase 3.5).** Goal: the first two-device test where both screens show one truth. A standalone `cats` table (two rows), realtime subscription, optimistic local writes, and a server trigger stamping `state_started_at` (clients never send timestamps — no phone-clock skew). RLS is enabled but the anon policies are permissive: **anyone with the anon key can read/update the two cats** — fine for a private two-person test, replaced by couple-scoped policies in Phase 4. Setup lives in `supabase/schema.sql` + `.env.example`.
+
 ---
 
 ## 1. Locked decisions
@@ -115,6 +119,8 @@ cats          id, couple_id, color, state, state_started_at, last_fed_at,
               last_groomed_at, last_slept_at
 interactions  id, cat_id, actor_id, action, created_at   -- append-only log
 ```
+
+**Already live (Phase 3.5, `supabase/schema.sql`):** a standalone `cats` table — `id ('black'|'orange'), state (CHECK-constrained to the FSM's states), state_started_at (stamped by a server trigger on state change)`. No `couple_id` yet; it arrives with pairing, when the permissive anon RLS policies also get replaced.
 
 - **RLS everywhere**: only members of a couple can read/write its cats.
 - **Realtime** subscriptions on `cats` (state sync) and `interactions` (timeline).
@@ -250,8 +256,9 @@ Zero component changes — this is the registry pattern's payoff:
 | 2.5. Dev client build | `expo-dev-client` + EAS Build, both phones off Expo Go for good — see §5 | ✅ 2026-07-14 — Android dev client built on EAS and installed; `eas.json` + `android.package` committed. iOS build still pending Apple Developer enrollment. |
 | 2.6. Single-screen "always together" | One screen: derived duo scenes (`duo.ts`) + both cats' action bars. FSM split into `grooming_self`/`grooming_other`. Second screen + solo components deleted. First pixel-art batch wired in. — see "Resolved" above | ✅ 2026-07-15 |
 | 3. Juice | Reanimated hearts/bounce on successful actions; remaining scene art (lingering, apart); optional animated (GIF/WebP) art | ⬜ |
-| 4. Supabase | Auth, couple pairing via invite code, RLS | ⬜ |
-| 5. Realtime sync | Server-authoritative cat state, two phones one truth | ⬜ |
+| 3.5. Identity gate + first sync | "Who are you?" chooser (one action bar per user) + Supabase realtime sync of the `cats` table, no pairing/auth — see "Resolved" 3 | 🟡 code done 2026-07-16; awaiting Supabase project creation (`supabase/schema.sql` + `.env`) and the first two-device test |
+| 4. Supabase | Auth, couple pairing via invite code, real RLS (replaces 3.5's anon policies) | ⬜ |
+| 5. Realtime sync | Server-authoritative cat state hardening: reconnect/offline handling, computing remaining animation time on app open (base mechanism shipped in 3.5) | ⬜ |
 | 6. Duo actions | Cuddle with both-idle guard | ⬜ |
 | 7. Decay | Lazy-decay needs (hunger/cleanliness/energy) | ⬜ |
 | 8. Timeline | Interaction history screen | ⬜ |

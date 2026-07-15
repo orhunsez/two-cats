@@ -12,3 +12,6 @@ export const CAT_PROFILES: Record<CatId, CatProfile> = {
 };
 
 export const CAT_IDS: CatId[] = ['black', 'orange'];
+
+/** The other cat — with exactly two cats this is total, no lookup needed. */
+export const partnerOf = (catId: CatId): CatId => (catId === 'black' ? 'orange' : 'black');

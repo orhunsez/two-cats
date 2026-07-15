@@ -476,3 +476,71 @@ row: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: sp
 The general lesson: in flexbox, a single row does **not** wrap by default — if you ever see content clipped or shoved off one edge, `flexWrap` is the first thing to reach for. Overflow is the default; wrapping is opt-in.
 
 *Next session: Phase 3 juice for real — hearts on a landed action, a press-squish on the buttons.*
+
+---
+
+## Session 8 — 2026-07-16 · Who are you, and the first taste of multiplayer
+
+Two features that belong together: an **identity gate** (each phone now knows whose human is holding it, and only shows controls for the cat that human cares for) and **Supabase realtime sync** (both phones render one server truth). This is the biggest conceptual session since the FSM — take it slowly.
+
+### 8.1 The identity gate — auth's stunt double
+
+`features/couple/identityStore.ts` is a second, tiny Zustand store: `userCatId: CatId | null`. The home screen starts with a guard clause —
+
+```tsx
+if (userCatId === null) return <WhoAreYou />;
+```
+
+— so until you pick "I'm Luna's human" / "I'm Mango's human", the chooser IS the screen. No navigation, no modal library: **conditional rendering is the simplest possible "router."** When Phase 4 brings real Supabase auth, only the *source* of `userCatId` changes (a session instead of a button press); the guard clause and everything below it stay identical. Building the placeholder with the same *shape* as the real thing is what makes it cheap to replace.
+
+Two deliberate choices: identity is **in-memory** (the chooser pops on every launch — you asked for exactly that, and it makes testing both roles on one phone trivial via the "switch" link), and the button copy says out loud that picking Luna's human means *caring for Mango* — the cross-care model would otherwise surprise people at the worst moment, mid-tap.
+
+Note what did NOT change: `catStore` still tracks both cats, `DuoScene` still shows both. Identity only filters **which ActionBar renders**. State model and permission model are separate concerns.
+
+### 8.2 Environment variables — config that isn't code
+
+`lib/supabase.ts` reads `process.env.EXPO_PUBLIC_SUPABASE_URL` / `..._ANON_KEY` from a `.env` file (gitignored; `.env.example` documents the shape). Metro **inlines** `EXPO_PUBLIC_*` values into the JS bundle at build time — which teaches two things at once:
+
+- change `.env` → **restart `expo start`**, or nothing happens (the values are baked in, not read at runtime);
+- anything `EXPO_PUBLIC_*` ships inside the app, so it is **not a secret**. That's fine here: Supabase's anon key is *designed* to be public — the security lives in Row Level Security on the server (8.4), never in hiding the key.
+
+The client is `null` when the vars are missing, and every service function no-ops on `null` — the app stays fully playable local-only with zero config. Graceful degradation beats a crash on a missing key.
+
+### 8.3 Why adding a backend didn't need a rebuild
+
+`@supabase/supabase-js` is **pure JavaScript** — remember Session 2.3: only *native* dependencies force a new EAS build. A whole backend SDK hot-reloads into your existing dev client over Metro like any other JS change. (`react-native-url-polyfill` fills in the `URL` API that Hermes doesn't fully implement — also pure JS. We even dodged the one native temptation: supabase-js wants AsyncStorage for *auth session persistence*, but we're not using auth yet, so `persistSession: false` and no native module.)
+
+### 8.4 The schema: CHECK constraints, triggers, and RLS
+
+`supabase/schema.sql` is ~50 lines and three server-side ideas:
+
+- **A CHECK constraint** mirrors the FSM: `state in ('idle','eating',...)`. The database now *refuses* invalid states no matter how buggy a client gets — the FSM's "invalid transitions are rejected" philosophy, enforced a second time at the last line of defense.
+- **A trigger stamps the timestamp.** Clients only ever send `state`; a `before update` trigger sets `state_started_at = now()` *on the server* whenever state actually changes. Why: two phones have two clocks, and they drift. If phones sent timestamps, "when did eating start" would depend on whose clock you ask. One server clock = one truth. This is your first real taste of **server-authoritative design** (PLAN.md §2 promised it for Phase 5; the mechanism landed early).
+- **RLS with honest training wheels.** Row Level Security is ON, with explicitly permissive policies: anyone holding the anon key may select/update the two rows (and nothing else — no insert/delete policy exists, so the table can never grow). For a private two-person test that's acceptable *because we wrote down why*; Phase 4 replaces these with couple-scoped policies. Security decisions you can't defend in a comment are decisions you haven't made.
+
+### 8.5 Realtime + optimistic updates — the multiplayer loop
+
+The data flow, end to end:
+
+```
+you tap Feed
+  → send() runs the FSM locally, updates the store   (UI reacts INSTANTLY)
+  → pushCatState() writes { state: 'eating' } to Supabase
+  → server trigger stamps state_started_at
+  → realtime broadcasts the row to EVERY subscribed phone — including yours
+  → applyRemote() overwrites the cat from the server row
+```
+
+Updating locally *before* the server confirms is an **optimistic update** — the UI never waits on a network round-trip. The echo that comes back a beat later replaces your guessed timestamp with the server-stamped one; on the *other* phone the same echo is where the change appears at all. One code path (`applyRemote`) serves both.
+
+`applyRemote` deliberately **bypasses the FSM**: the server is the authority, and this phone may have been backgrounded through several transitions — validating "can I get here from my stale state?" would wrongly reject truth. Trust hierarchy: user taps go through the FSM; server rows *are* the state. And it never fires reactions or pushes — the acting phone already did both; re-firing would double every event on every phone.
+
+The cleverest bit is old code paying off: `applyRemote` schedules a FINISH timer for `duration - elapsed` (a phone opening mid-meal shows only the *remaining* 3s). Both phones end up racing FINISH timers — and it doesn't matter, because FINISH goes through the FSM, and the loser's FINISH finds the cat already idle and is rejected. Session 1.5's "a stale timer is harmless by construction" design survived multiplayer without modification. Good invariants scale.
+
+### 8.6 One-directional wiring (avoiding the import cycle)
+
+`catStore` imports `catSync` (to push). The subscription needs to call the *store* (to apply). If `catSync` also imported the store: **circular import**. The fix is a third module, `initSync.ts`, that imports both and pipes one into the other, called once from the root layout's `useEffect`. Dependencies now flow one way: `store → service ← bootstrap`. When two modules need each other, the answer is almost always a third module above them, not a cycle between them.
+
+Also note in `initSync`: **subscribe first, fetch second** — if a change lands between the two, the subscription already catches it; the reverse order has a gap where an update can be missed forever. Ordering around race windows is the daily bread of realtime code.
+
+*Next session: run `supabase/schema.sql` in your project, fill `.env`, and do the first two-device sync test — then Phase 3 juice or Phase 4 auth.*
