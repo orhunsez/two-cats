@@ -10,4 +10,4 @@ files can be found : C:\users\orhun\.wslconfig -> NAT networking issue solved
 
 npx eas-cli@latest build:configure --platform android
 
-typecheck + lint every step to see crashes
+typecheck + lint every step to see crashes/assets

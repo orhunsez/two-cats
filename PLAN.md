@@ -176,7 +176,7 @@ Useful for **fast solo iteration** (instant reload, no device needed) while writ
 
 **All art is duo art** — both cats in one frame — because the app only ever shows the shared scene (§Resolved 2). Every image depicts **one exact `(black, orange)` state pair**, so the resolver (`getDuoScene`) is a plain lookup table keyed by `${black}|${orange}`; a state pair with no row → `apart` → emoji.
 
-Scene → art (pixel-art batch, 13 images, 2026-07-15):
+Scene → art (pixel-art batch, 15 images, 2026-07-15):
 
 | Scene | State pair (black, orange) | File |
 |---|---|---|
@@ -185,8 +185,10 @@ Scene → art (pixel-art batch, 13 images, 2026-07-15):
 | `eating_together` | (eating, eating) | `cats_eating.jpg` |
 | `lingering_black` | (idle, sleeping) | `black_idle_orange_sleeps.jpg` |
 | `lingering_orange` | (sleeping, idle) | `orange_idle_black_sleeps.jpg` |
-| `black_grooms_self` | (grooming_self, sleeping) | `black_grooms_itself_orange_sleeps.jpg` |
-| `orange_grooms_self` | (sleeping, grooming_self) | `orange_grooms_itself_black_sleeps.jpg` |
+| `black_grooms_self_orange_sleeps` | (grooming_self, sleeping) | `black_grooms_itself_orange_sleeps.jpg` |
+| `black_grooms_self_orange_idle` | (grooming_self, idle) | `orange_idle_black_grooms_itself.jpg` |
+| `orange_grooms_self_black_sleeps` | (sleeping, grooming_self) | `orange_grooms_itself_black_sleeps.jpg` |
+| `orange_grooms_self_black_idle` | (idle, grooming_self) | `black_idle_orange_grooms_itself.jpg` |
 | `black_grooms_other` | (grooming_other, sleeping) | `black_grooms_orange.jpg` |
 | `orange_grooms_other` | (sleeping, grooming_other) | `orange_grooms_black.jpg` |
 | `black_eats_orange_grooms` | (eating, grooming_self) | `black_eats_orange_grooms_itself.jpg` |
@@ -195,11 +197,10 @@ Scene → art (pixel-art batch, 13 images, 2026-07-15):
 | `orange_eats_black_sleeps` | (sleeping, eating) | `orange_eats_black_sleeps.jpg` |
 | `apart` | every other pairing | — (emoji) |
 
-Note the art deliberately pairs some solo activities with a *sleeping* partner (grooming self, eating-while-partner-sleeps). The partner reactions (§2) are tuned to land the cats in exactly these pairs.
+Note the art deliberately pairs some solo activities with a *sleeping* partner (eating-while-partner-sleeps). The partner reactions (§2) are tuned to land the cats in exactly these pairs. Grooming-self now has both partner-asleep *and* partner-idle art, so the *Groom self* button always shows real art.
 
-**Known art gaps (reachable pairings that fall to `apart`/emoji):**
-- **`(grooming_self, idle)` / `(idle, grooming_self)`** — pressing *Groom self* on one cat while the partner is awake/idle. The only grooming-self art shows the partner asleep, so this common case has no exact match. Options: draw a "grooms itself, partner awake" image, OR broaden the lookup to reuse the partner-asleep art, OR add a reaction so grooming yourself also settles the partner. **Open decision.**
-- **`(eating, idle)` / `(idle, eating)`** — brief transitional pairing (e.g. feed one cat while the other's reaction gets rejected, or wake the partner mid-meal). Low priority.
+**Remaining art gaps (reachable pairings that fall to `apart`/emoji):**
+- **`(eating, idle)` / `(idle, eating)`** — brief transitional pairing (e.g. feed one cat while the other's groom reaction gets rejected, or wake the partner mid-meal). Low priority.
 - Reachability note: `eating_together` requires waking a sleeping cat and feeding it while the first is still mid-meal (5s window) — the FEED reaction (partner grooms itself) makes the both-eating pair rare by design. If it should be more common, tune the reaction later.
 
 Spec for the generator (matches this batch):

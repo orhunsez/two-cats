@@ -22,8 +22,18 @@ export const DUO_GIFS: Record<DuoSceneId, number[] | null> = {
   eating_together: [require('../../../assets/cats/cats_eating.jpg')],
   lingering_black: [require('../../../assets/cats/black_idle_orange_sleeps.jpg')],
   lingering_orange: [require('../../../assets/cats/orange_idle_black_sleeps.jpg')],
-  black_grooms_self: [require('../../../assets/cats/black_grooms_itself_orange_sleeps.jpg')],
-  orange_grooms_self: [require('../../../assets/cats/orange_grooms_itself_black_sleeps.jpg')],
+  black_grooms_self_orange_sleeps: [
+    require('../../../assets/cats/black_grooms_itself_orange_sleeps.jpg'),
+  ],
+  black_grooms_self_orange_idle: [
+    require('../../../assets/cats/orange_idle_black_grooms_itself.jpg'),
+  ],
+  orange_grooms_self_black_sleeps: [
+    require('../../../assets/cats/orange_grooms_itself_black_sleeps.jpg'),
+  ],
+  orange_grooms_self_black_idle: [
+    require('../../../assets/cats/black_idle_orange_grooms_itself.jpg'),
+  ],
   black_grooms_other: [require('../../../assets/cats/black_grooms_orange.jpg')],
   orange_grooms_other: [require('../../../assets/cats/orange_grooms_black.jpg')],
   black_eats_orange_grooms: [require('../../../assets/cats/black_eats_orange_grooms_itself.jpg')],

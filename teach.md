@@ -428,3 +428,51 @@ Every one of your 10 images is now wired to the exact pair it depicts, including
 The art arrived from Windows carrying `*:Zone.Identifier` sidecar files — NTFS "mark of the web" metadata that tags downloaded files. Harmless but junk in a repo, and one had leaked in with no matching image. Removed them and added `*:Zone.Identifier` to `.gitignore`. Small thing, but keeping non-source cruft out of version control is part of the same hygiene as never committing `node_modules`.
 
 *Next session: Phase 3 juice — hearts when an action lands, button squish — and closing the `(grooming_self, idle)` art gap.*
+
+---
+
+## Session 7 — 2026-07-15 · Responsive sizing and why layouts overflow
+
+Small session: you closed the `(grooming_self, idle)` art gap (grooming-self now has partner-idle art, not just partner-asleep), and asked for two fixes that are really one lesson — **how React Native sizing actually works.**
+
+### 7.1 Making the scene image bigger — fixed px vs. responsive
+
+The image was `width: 280, height: 200` — **fixed pixels**. On a big phone that's small and marooned in whitespace; on a tiny phone it might be too wide. Fixed pixels can't be "big" everywhere because screens differ.
+
+The fix is to size *relative to the parent* instead:
+
+```ts
+stage: { width: '100%', aspectRatio: 1 },   // was height: 200
+gif:   { width: '100%', height: '100%' },   // was width: 280, height: 200
+```
+
+Two ideas here:
+
+- **`width: '100%'`** means "as wide as my parent allows" — the image now grows and shrinks with the card, which grows with the screen. Percentages are the backbone of responsive layout.
+- **`aspectRatio: 1`** means "make height equal to width" (a ratio, `1` = square). So instead of hard-coding a height, the box *derives* its height from its actual width — on every phone it stays a clean square. Set `aspectRatio: 16/9` for widescreen, etc. This is the layout cousin of Session 4.1's "derive, don't store": don't pin a number you can compute from another one.
+
+`contentFit="contain"` (Session 1.7) then fits each image inside that responsive box without distortion — a wide image just gets letterbox bars, never a stretch.
+
+Rule of thumb: **fixed pixels for things that shouldn't scale (borders, icon-ish elements), percentages + `aspectRatio` for things that should fill space (media, cards).**
+
+### 7.2 The feed button "crashing into the edge" — the missing `flexWrap`
+
+Each cat's `ActionBar` is a row of up to four buttons (`Feed`, `Groom self`, `Groom partner`, `Sleep`). The row was:
+
+```ts
+row: { flexDirection: 'row', justifyContent: 'center' }
+```
+
+On a narrow phone those four buttons are wider than the screen. Here's the non-obvious part: **`justifyContent: 'center'` centers overflow too** — when content is wider than its container, centering pushes *both* ends past the edges equally, so the leftmost button (Feed) slides off the left side. It wasn't a margin bug; it was overflow with nowhere to go.
+
+The fix is one line — `flexWrap: 'wrap'`:
+
+```ts
+row: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: spacing.sm }
+```
+
+`flexWrap` lets buttons that don't fit **drop to a second row** instead of overflowing sideways. Now everything stays within the screen's padding, centered, on as many rows as needed. (`gap` already handles spacing on both axes, so the wrapped row is spaced correctly for free.)
+
+The general lesson: in flexbox, a single row does **not** wrap by default — if you ever see content clipped or shoved off one edge, `flexWrap` is the first thing to reach for. Overflow is the default; wrapping is opt-in.
+
+*Next session: Phase 3 juice for real — hearts on a landed action, a press-squish on the buttons.*

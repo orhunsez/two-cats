@@ -45,6 +45,9 @@ export function ActionBar({ state, onAction }: Props) {
 const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
+    // Without wrap, 4 buttons overflow a narrow phone and the leftmost gets
+    // pushed off-screen. Wrapping lets extras drop to a second centered row.
+    flexWrap: 'wrap',
     justifyContent: 'center',
     gap: spacing.sm,
   },

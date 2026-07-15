@@ -122,12 +122,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   stage: {
-    height: 200,
+    // width:'100%' fills the card, aspectRatio keeps it square as the phone
+    // grows/shrinks — the image scales with the screen instead of a fixed 280px.
+    width: '100%',
+    aspectRatio: 1,
+    alignItems: 'center',
     justifyContent: 'center',
   },
   gif: {
-    width: 280,
-    height: 200,
+    width: '100%',
+    height: '100%',
   },
   emoji: {
     fontSize: 56,
